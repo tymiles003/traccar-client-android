@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2013 - 2017 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
-import android.support.v4.content.WakefulBroadcastReceiver;
 
 public class AutostartReceiver extends WakefulBroadcastReceiver {
     
     @Override
     public void onReceive(Context context, Intent intent) {
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
-        if (sharedPreferences.getBoolean(MainActivity.KEY_STATUS, false)) {
-            startWakefulService(context, new Intent(context, TrackingService.class));
+        if (sharedPreferences.getBoolean(MainFragment.KEY_STATUS, false)) {
+            startWakefulForegroundService(context, new Intent(context, TrackingService.class));
         }
     }
 

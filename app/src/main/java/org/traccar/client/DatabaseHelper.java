@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2015 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import java.util.Date;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
 
-    public static final int DATABASE_VERSION = 1;
+    public static final int DATABASE_VERSION = 3;
     public static final String DATABASE_NAME = "traccar.db";
 
     public interface DatabaseHandler<T> {
@@ -79,11 +79,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "altitude REAL," +
                 "speed REAL," +
                 "course REAL," +
-                "battery REAL)");
+                "accuracy REAL," +
+                "battery REAL," +
+                "mock INTEGER)");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        db.execSQL("DROP TABLE IF EXISTS position;");
+        onCreate(db);
+    }
+
+    public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         db.execSQL("DROP TABLE IF EXISTS position;");
         onCreate(db);
     }
@@ -97,7 +104,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put("altitude", position.getAltitude());
         values.put("speed", position.getSpeed());
         values.put("course", position.getCourse());
+        values.put("accuracy", position.getAccuracy());
         values.put("battery", position.getBattery());
+        values.put("mock", position.getMock() ? 1 : 0);
 
         db.insertOrThrow("position", null, values);
     }
@@ -129,7 +138,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 position.setAltitude(cursor.getDouble(cursor.getColumnIndex("altitude")));
                 position.setSpeed(cursor.getDouble(cursor.getColumnIndex("speed")));
                 position.setCourse(cursor.getDouble(cursor.getColumnIndex("course")));
+                position.setAccuracy(cursor.getDouble(cursor.getColumnIndex("accuracy")));
                 position.setBattery(cursor.getDouble(cursor.getColumnIndex("battery")));
+                position.setMock(cursor.getInt(cursor.getColumnIndex("mock")) > 0);
 
             } else {
                 return null;

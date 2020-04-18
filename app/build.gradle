@@ -1,56 +1,62 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 23
-    buildToolsVersion '23.0.1'
+    compileSdkVersion 29
 
     defaultConfig {
-        minSdkVersion 3
-        targetSdkVersion 23
-        versionCode 27
-        versionName '3.7'
+        applicationId 'org.traccar.client'
+        buildConfigField 'boolean', 'HIDDEN_APP', 'false'
+        minSdkVersion 16
+        targetSdkVersion 29
+        versionCode 62
+        versionName '6.1'
     }
 
-    signingConfigs {
-        release {
-            storeFile file('../../android.keystore')
-            keyAlias 'tananaev'
-            storePassword ''
-            keyPassword ''
-        }
+    lintOptions {
+        checkReleaseBuilds false
     }
 
+    flavorDimensions 'default'
     productFlavors {
         regular {
-            applicationId "org.traccar.client"
-            buildConfigField "boolean", "HIDDEN_APP", "false"
+            isDefault.set(true)
         }
+        google
         hidden {
-            applicationId "org.traccar.client.hidden"
-            buildConfigField "boolean", "HIDDEN_APP", "true"
+            applicationId 'org.traccar.client.hidden'
+            buildConfigField 'boolean', 'HIDDEN_APP', 'true'
         }
     }
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            signingConfig signingConfigs.release
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
         }
     }
 }
 
 dependencies {
-    testCompile 'junit:junit:4.12'
-    testCompile 'org.robolectric:robolectric:3.0'
+    implementation 'com.google.android.material:material:1.2.0-alpha04'
+    implementation 'androidx.preference:preference:1.1.0'
+    testImplementation 'junit:junit:4.13'
+    testImplementation 'org.robolectric:robolectric:4.1'
+    googleImplementation 'com.google.firebase:firebase-core:17.2.2'
+    googleImplementation 'com.crashlytics.sdk.android:crashlytics:2.10.1'
+    googleImplementation 'com.google.android.gms:play-services-location:17.0.0'
 }
 
-task requestPasswords << {
-    android.signingConfigs.release.storePassword = new String(System.console().readPassword('\nStore password: '))
-    android.signingConfigs.release.keyPassword = new String(System.console().readPassword('Key password: '))
-}
+if (getGradle().getStartParameter().getTaskRequests().toString().contains('Google')) {
+    apply plugin: 'com.google.gms.google-services'
+    apply plugin: 'io.fabric'
 
-tasks.whenTaskAdded { theTask ->
-    if (theTask.name.equals('packageRegularRelease') || theTask.name.equals('packageHiddenRelease')) {
-        theTask.dependsOn 'requestPasswords'
+    task copyJson(type: Copy) {
+        from '../../traccar-shared/google-services'
+        into '.'
+        include 'traccar-client-android.json'
+        rename('traccar-client-android.json', 'google-services.json')
+    }
+
+    afterEvaluate {
+        preBuild.dependsOn copyJson
     }
 }

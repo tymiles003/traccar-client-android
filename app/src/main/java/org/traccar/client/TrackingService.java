@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 - 2015 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2012 - 2019 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,52 +15,49 @@
  */
 package org.traccar.client;
 
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
-import android.preference.PreferenceManager;
-import android.util.Log;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import android.os.PowerManager;
+import android.util.Log;
 
 public class TrackingService extends Service {
 
     private static final String TAG = TrackingService.class.getSimpleName();
     private static final int NOTIFICATION_ID = 1;
 
+    private PowerManager.WakeLock wakeLock;
     private TrackingController trackingController;
 
-    @SuppressWarnings("deprecation")
     private static Notification createNotification(Context context) {
-        Intent notificationIntent = new Intent(context, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, notificationIntent, 0);
-
-        Notification notification = new Notification(android.R.drawable.stat_notify_sync_noanim, null, 0);
-        try {
-            Method method = notification.getClass().getMethod("setLatestEventInfo", Context.class, CharSequence.class, CharSequence.class, PendingIntent.class);
-            try {
-                method.invoke(notification, context, context.getString(R.string.app_name), context.getString(R.string.settings_status_on_summary), pendingIntent);
-            } catch (IllegalArgumentException | IllegalAccessException | InvocationTargetException e) {
-                Log.w(TAG, e);
-            }
-        } catch (SecurityException | NoSuchMethodException e) {
-            Log.w(TAG, e);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, MainApplication.PRIMARY_CHANNEL)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE);
+        Intent intent;
+        if (!BuildConfig.HIDDEN_APP) {
+            intent = new Intent(context, MainActivity.class);
+            builder
+                .setContentTitle(context.getString(R.string.settings_status_on_summary))
+                .setTicker(context.getString(R.string.settings_status_on_summary))
+                .setColor(ContextCompat.getColor(context, R.color.primary_dark));
+        } else {
+            intent = new Intent(android.provider.Settings.ACTION_SETTINGS);
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            notification.priority = Notification.PRIORITY_MIN;
-        }
-
-        return notification;
+        builder.setContentIntent(PendingIntent.getActivity(context, 0, intent, 0));
+        return builder.build();
     }
 
-    @TargetApi(Build.VERSION_CODES.ECLAIR)
     public static class HideNotificationService extends Service {
         @Override
         public IBinder onBind(Intent intent) {
@@ -80,17 +77,26 @@ public class TrackingService extends Service {
         }
     }
 
+    @SuppressLint("WakelockTimeout")
     @Override
     public void onCreate() {
         Log.i(TAG, "service create");
         StatusActivity.addMessage(getString(R.string.status_service_create));
 
-        trackingController = new TrackingController(this);
-        trackingController.start();
+        startForeground(NOTIFICATION_ID, createNotification(this));
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR) {
-            startForeground(NOTIFICATION_ID, createNotification(this));
-            startService(new Intent(this, HideNotificationService.class));
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getClass().getName());
+            wakeLock.acquire();
+
+            trackingController = new TrackingController(this);
+            trackingController.start();
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            ContextCompat.startForegroundService(this, new Intent(this, HideNotificationService.class));
         }
     }
 
@@ -99,18 +105,12 @@ public class TrackingService extends Service {
         return null;
     }
 
-    @SuppressWarnings("deprecation")
-    @Override
-    public void onStart(Intent intent, int startId) {
-        if (intent != null) {
-            AutostartReceiver.completeWakefulIntent(intent);
-        }
-    }
-
     @TargetApi(Build.VERSION_CODES.ECLAIR)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        onStart(intent, startId);
+        if (intent != null) {
+            AutostartReceiver.completeWakefulIntent(intent);
+        }
         return START_STICKY;
     }
 
@@ -119,10 +119,11 @@ public class TrackingService extends Service {
         Log.i(TAG, "service destroy");
         StatusActivity.addMessage(getString(R.string.status_service_destroy));
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR) {
-            stopForeground(true);
-        }
+        stopForeground(true);
 
+        if (wakeLock != null && wakeLock.isHeld()) {
+            wakeLock.release();
+        }
         if (trackingController != null) {
             trackingController.stop();
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 - 2015 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2013 - 2019 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,75 +15,77 @@
  */
 package org.traccar.client;
 
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.location.Location;
-import android.location.LocationManager;
 import android.os.BatteryManager;
-import android.os.Build;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
 public abstract class PositionProvider {
 
-    protected static final String TAG = PositionProvider.class.getSimpleName();
+    private static final String TAG = PositionProvider.class.getSimpleName();
+
+    protected static final int MINIMUM_INTERVAL = 1000;
 
     public interface PositionListener {
         void onPositionUpdate(Position position);
+        void onPositionError(Throwable error);
     }
 
-    private final PositionListener listener;
+    protected final PositionListener listener;
 
-    private final Context context;
-    private final SharedPreferences preferences;
-    protected final LocationManager locationManager;
+    protected final Context context;
+    protected SharedPreferences preferences;
 
-    private String deviceId;
-    protected String type;
-    protected final long period;
+    protected String deviceId;
+    protected long interval;
+    protected double distance;
+    protected double angle;
 
-    private long lastUpdateTime;
+    protected Location lastLocation;
 
     public PositionProvider(Context context, PositionListener listener) {
         this.context = context;
         this.listener = listener;
 
         preferences = PreferenceManager.getDefaultSharedPreferences(context);
-        locationManager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
 
-        deviceId = preferences.getString(MainActivity.KEY_DEVICE, null);
-        period = Integer.parseInt(preferences.getString(MainActivity.KEY_INTERVAL, null)) * 1000;
-
-        type = preferences.getString(MainActivity.KEY_PROVIDER, null);
+        deviceId = preferences.getString(MainFragment.KEY_DEVICE, "undefined");
+        interval = Long.parseLong(preferences.getString(MainFragment.KEY_INTERVAL, "600")) * 1000;
+        distance = Integer.parseInt(preferences.getString(MainFragment.KEY_DISTANCE, "0"));
+        angle = Integer.parseInt(preferences.getString(MainFragment.KEY_ANGLE, "0"));
     }
 
     public abstract void startUpdates();
 
     public abstract void stopUpdates();
 
-    protected void updateLocation(Location location) {
-        if (location != null && location.getTime() != lastUpdateTime) {
+    public abstract void requestSingleLocation();
+
+    protected void processLocation(Location location) {
+        if (location != null && (lastLocation == null
+                || location.getTime() - lastLocation.getTime() >= interval
+                || distance > 0 && location.distanceTo(lastLocation) >= distance
+                || angle > 0 && Math.abs(location.getBearing() - lastLocation.getBearing()) >= angle)) {
             Log.i(TAG, "location new");
-            lastUpdateTime = location.getTime();
-            listener.onPositionUpdate(new Position(deviceId, location, getBatteryLevel()));
+            lastLocation = location;
+            listener.onPositionUpdate(new Position(deviceId, location, getBatteryLevel(context)));
         } else {
-            Log.i(TAG, location != null ? "location old" : "location nil");
+            Log.i(TAG, location != null ? "location ignored" : "location nil");
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.ECLAIR)
-    private double getBatteryLevel() {
-        if (android.os.Build.VERSION.SDK_INT > Build.VERSION_CODES.ECLAIR) {
-            Intent batteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+    protected static double getBatteryLevel(Context context) {
+        Intent batteryIntent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (batteryIntent != null) {
             int level = batteryIntent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
             int scale = batteryIntent.getIntExtra(BatteryManager.EXTRA_SCALE, 1);
             return (level * 100.0) / scale;
-        } else {
-            return 0;
         }
+        return 0;
     }
 
 }

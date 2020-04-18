@@ -1,14 +1,14 @@
 # [Traccar Client for Android](https://www.traccar.org/client)
 
-## Contacts
-
-Author - Anton Tananaev ([anton.tananaev@gmail.com](mailto:anton.tananaev@gmail.com))
-
-Website - [https://www.traccar.org/client](https://www.traccar.org/client)
+[![Get it on Google Play](http://www.tananaev.com/badges/google-play.svg)](https://play.google.com/store/apps/details?id=org.traccar.client) [![Get it on F-Droid](http://www.tananaev.com/badges/f-droid.svg)](https://f-droid.org/repository/browse/?fdid=org.traccar.client)
 
 ## Overview
 
 Traccar Client is an Android GPS tracking application. It can work with Traccar open source server software.
+
+## Team
+
+- Anton Tananaev ([anton@traccar.org](mailto:anton@traccar.org))
 
 ## License
 

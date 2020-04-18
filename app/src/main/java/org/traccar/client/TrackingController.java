@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2015 - 2019 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,7 @@ package org.traccar.client;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.os.Build;
 import android.os.Handler;
-import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
@@ -27,68 +25,54 @@ public class TrackingController implements PositionProvider.PositionListener, Ne
 
     private static final String TAG = TrackingController.class.getSimpleName();
     private static final int RETRY_DELAY = 30 * 1000;
-    private static final int WAKE_LOCK_TIMEOUT = 60 * 1000;
+    private static final int WAKE_LOCK_TIMEOUT = 120 * 1000;
 
     private boolean isOnline;
     private boolean isWaiting;
 
     private Context context;
     private Handler handler;
+    private SharedPreferences preferences;
 
-    private String address;
-    private int port;
+    private String url;
+    private boolean buffer;
 
     private PositionProvider positionProvider;
     private DatabaseHelper databaseHelper;
     private NetworkManager networkManager;
 
-    private PowerManager.WakeLock wakeLock;
-
-    private void lock() {
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.GINGERBREAD_MR1) {
-            wakeLock.acquire();
-        } else {
-            wakeLock.acquire(WAKE_LOCK_TIMEOUT);
-        }
-    }
-
-    private void unlock() {
-        if (wakeLock.isHeld()) {
-            wakeLock.release();
-        }
-    }
-
     public TrackingController(Context context) {
         this.context = context;
         handler = new Handler();
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-        if (preferences.getString(MainActivity.KEY_PROVIDER, null).equals("mixed")) {
-            positionProvider = new MixedPositionProvider(context, this);
-        } else {
-            positionProvider = new SimplePositionProvider(context, this);
-        }
+        preferences = PreferenceManager.getDefaultSharedPreferences(context);
+        positionProvider = PositionProviderFactory.create(context, this);
         databaseHelper = new DatabaseHelper(context);
         networkManager = new NetworkManager(context, this);
         isOnline = networkManager.isOnline();
 
-        address = preferences.getString(MainActivity.KEY_ADDRESS, null);
-        port = Integer.parseInt(preferences.getString(MainActivity.KEY_PORT, null));
-
-        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getClass().getName());
+        url = preferences.getString(MainFragment.KEY_URL, context.getString(R.string.settings_url_default_value));
+        buffer = preferences.getBoolean(MainFragment.KEY_BUFFER, true);
     }
 
     public void start() {
         if (isOnline) {
             read();
         }
-        positionProvider.startUpdates();
+        try {
+            positionProvider.startUpdates();
+        } catch (SecurityException e) {
+            Log.w(TAG, e);
+        }
         networkManager.start();
     }
 
     public void stop() {
         networkManager.stop();
-        positionProvider.stopUpdates();
+        try {
+            positionProvider.stopUpdates();
+        } catch (SecurityException e) {
+            Log.w(TAG, e);
+        }
         handler.removeCallbacksAndMessages(null);
     }
 
@@ -96,13 +80,22 @@ public class TrackingController implements PositionProvider.PositionListener, Ne
     public void onPositionUpdate(Position position) {
         StatusActivity.addMessage(context.getString(R.string.status_location_update));
         if (position != null) {
-            write(position);
+            if (buffer) {
+                write(position);
+            } else {
+                send(position);
+            }
         }
     }
 
     @Override
+    public void onPositionError(Throwable error) {
+    }
+
+    @Override
     public void onNetworkUpdate(boolean isOnline) {
-        StatusActivity.addMessage(context.getString(R.string.status_connectivity_change));
+        int message = isOnline ? R.string.status_network_online : R.string.status_network_offline;
+        StatusActivity.addMessage(context.getString(message));
         if (!this.isOnline && isOnline) {
             read();
         }
@@ -130,7 +123,6 @@ public class TrackingController implements PositionProvider.PositionListener, Ne
 
     private void write(Position position) {
         log("write", position);
-        lock();
         databaseHelper.insertPositionAsync(position, new DatabaseHelper.DatabaseHandler<Void>() {
             @Override
             public void onComplete(boolean success, Void result) {
@@ -140,34 +132,34 @@ public class TrackingController implements PositionProvider.PositionListener, Ne
                         isWaiting = false;
                     }
                 }
-                unlock();
             }
         });
     }
 
     private void read() {
         log("read", null);
-        lock();
         databaseHelper.selectPositionAsync(new DatabaseHelper.DatabaseHandler<Position>() {
             @Override
             public void onComplete(boolean success, Position result) {
                 if (success) {
                     if (result != null) {
-                        send(result);
+                        if (result.getDeviceId().equals(preferences.getString(MainFragment.KEY_DEVICE, null))) {
+                            send(result);
+                        } else {
+                            delete(result);
+                        }
                     } else {
                         isWaiting = true;
                     }
                 } else {
                     retry();
                 }
-                unlock();
             }
         });
     }
 
     private void delete(Position position) {
         log("delete", position);
-        lock();
         databaseHelper.deletePositionAsync(position.getId(), new DatabaseHelper.DatabaseHandler<Void>() {
             @Override
             public void onComplete(boolean success, Void result) {
@@ -176,25 +168,26 @@ public class TrackingController implements PositionProvider.PositionListener, Ne
                 } else {
                     retry();
                 }
-                unlock();
             }
         });
     }
 
     private void send(final Position position) {
         log("send", position);
-        lock();
-        String request = ProtocolFormatter.formatRequest(address, port, position);
+        String request = ProtocolFormatter.formatRequest(url, position);
         RequestManager.sendRequestAsync(request, new RequestManager.RequestHandler() {
             @Override
             public void onComplete(boolean success) {
                 if (success) {
-                    delete(position);
+                    if (buffer) {
+                        delete(position);
+                    }
                 } else {
                     StatusActivity.addMessage(context.getString(R.string.status_send_fail));
-                    retry();
+                    if (buffer) {
+                        retry();
+                    }
                 }
-                unlock();
             }
         });
     }

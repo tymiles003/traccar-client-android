@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Anton Tananaev (anton.tananaev@gmail.com)
+ * Copyright 2015 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package org.traccar.client;
 
 import android.os.AsyncTask;
+import android.util.Log;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,6 +57,7 @@ public class RequestManager {
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setReadTimeout(TIMEOUT);
             connection.setConnectTimeout(TIMEOUT);
+            connection.setRequestMethod("POST");
             connection.connect();
             inputStream = connection.getInputStream();
             while (inputStream.read() != -1);
@@ -68,7 +70,7 @@ public class RequestManager {
                     inputStream.close();
                 }
             } catch (IOException secondError) {
-                return false;
+                Log.w(RequestManager.class.getSimpleName(), secondError);
             }
         }
     }

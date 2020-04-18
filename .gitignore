@@ -1,7 +1,7 @@
 .gradle
 .idea/
 local.properties
-traccar-client-android.iml
-app/app.iml
+*.iml
 build/
-app/build/
+.DS_Store
+google-services.json
